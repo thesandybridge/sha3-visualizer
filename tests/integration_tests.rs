@@ -170,7 +170,7 @@ fn test_bit_matrix_integrity() {
     assert!(absorbed_bits < 1600, "Not all bits should be set after absorption");
     
     // Continue through transformations
-    let mut previous_bits = absorbed_bits;
+    let mut _previous_bits = absorbed_bits;
     for _ in 0..5 { // Test a few transformation steps
         if !state.is_complete {
             state.step();
@@ -182,7 +182,7 @@ fn test_bit_matrix_integrity() {
             // Bit count can change between steps (that's the point of the algorithm)
             // but should remain within reasonable bounds
             assert!(current_bits <= 1600, "Bit count should not exceed state size");
-            previous_bits = current_bits;
+            _previous_bits = current_bits;
         }
     }
 }
@@ -304,7 +304,7 @@ fn test_bit_access_during_execution() {
     
     while !state.is_complete {
         // Before step
-        let bits_before: Vec<bool> = test_coords
+        let _bits_before: Vec<bool> = test_coords
             .iter()
             .map(|&(x, y, z)| state.get_bit(x, y, z))
             .collect();
@@ -331,10 +331,12 @@ fn test_bit_access_during_execution() {
 fn test_performance_characteristics() {
     use std::time::Instant;
     
+    let medium_input = "x".repeat(100);
+    let long_input = "y".repeat(1000);
     let inputs = vec![
         ("short", "abc"),
-        ("medium", &"x".repeat(100)),
-        ("long", &"y".repeat(1000)),
+        ("medium", &medium_input),
+        ("long", &long_input),
     ];
     
     for (name, input) in inputs {

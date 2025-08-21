@@ -393,22 +393,27 @@ impl KeccakState {
     #[allow(dead_code)]
     pub fn get_output_hex(&self) -> String {
         let mut output = String::new();
-        for i in 0..(self.output_length / 8) {
-            if i < 25 {
-                // SHA-3 uses little-endian byte order for output
-                let bytes = self.state[i].to_le_bytes();
-                for byte in bytes {
-                    output.push_str(&format!("{:02x}", byte));
+        let mut bytes_written = 0;
+        let target_bytes = self.output_length;
+        
+        for i in 0..25 {
+            if bytes_written >= target_bytes {
+                break;
+            }
+            
+            // SHA-3 uses little-endian byte order for output
+            let lane_bytes = self.state[i].to_le_bytes();
+            
+            for &byte in &lane_bytes {
+                if bytes_written >= target_bytes {
+                    break;
                 }
+                output.push_str(&format!("{:02x}", byte));
+                bytes_written += 1;
             }
         }
-        // Take only the required number of characters, but don't exceed what's available
-        let target_len = self.output_length * 2;
-        if output.len() >= target_len {
-            output[0..target_len].to_string()
-        } else {
-            output
-        }
+        
+        output
     }
 
     pub fn get_capacity(&self) -> usize {
