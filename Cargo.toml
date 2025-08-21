@@ -2,6 +2,18 @@
 name = "sha3-visualizer"
 version = "0.1.0"
 edition = "2021"
+authors = ["SHA-3 Visualizer Contributors"]
+description = "A real-time 3D visualization of the SHA-3 (Keccak) cryptographic hash function"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/user/sha3-visualizer"
+keywords = ["cryptography", "sha3", "keccak", "visualization", "education"]
+categories = ["cryptography", "visualization", "educational-software"]
+readme = "README.md"
+
+# Enable library mode for testing
+[lib]
+name = "sha3_visualizer"
+path = "src/lib.rs"
 
 [[bin]]
 name = "sha3-visualizer"
@@ -13,3 +25,37 @@ bevy_panorbit_camera = "0.19"
 clap = { version = "4.0", features = ["derive"] }
 atty = "0.2"
 sha3 = "0.10"
+
+[dev-dependencies]
+# Additional SHA-3 variants for comprehensive testing
+sha3 = { version = "0.10", features = ["std"] }
+# Benchmarking and performance testing
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Optimize for educational use - prioritize readability and step-by-step debugging
+[profile.dev]
+opt-level = 1
+debug = true
+overflow-checks = true
+
+# Optimize for performance while maintaining debugging symbols
+[profile.release]
+opt-level = 3
+debug = true
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+# Profile for distribution - maximum optimization
+[profile.dist]
+inherits = "release"
+opt-level = 3
+debug = false
+strip = "symbols"
+lto = "fat"
+panic = "abort"
+
+# Configuration for documentation generation
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
