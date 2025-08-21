@@ -249,28 +249,39 @@ fn test_state_consistency() {
     let mut state = KeccakState::new();
     state.set_input("consistency test");
     
+    let mut absorbed = false;
     while !state.is_complete {
         let round_before = state.round;
         let step_before = state.step;
+        let absorbed_before = absorbed;
         
         state.step();
         
-        // Verify step/round advancement logic
+        // Check if this was the absorption step
+        if round_before == 0 && step_before == 0 && !absorbed_before {
+            // This was the absorption step - step and round should remain the same
+            assert_eq!(state.round, round_before, "Round should not change during absorption");
+            assert_eq!(state.step, step_before, "Step should not change during absorption");
+            absorbed = true;
+            continue;
+        }
+        
+        // Verify step/round advancement logic for actual transformations
         if state.is_complete {
             // Algorithm completed
             break;
         } else if step_before < 4 {
             // Should advance to next step in same round
-            assert_eq!(state.round, round_before);
-            assert_eq!(state.step, step_before + 1);
+            assert_eq!(state.round, round_before, "Round should stay same when advancing step");
+            assert_eq!(state.step, step_before + 1, "Step should advance by 1");
         } else {
             // Should advance to next round, reset step to 0
             if round_before < 23 {
-                assert_eq!(state.round, round_before + 1);
-                assert_eq!(state.step, 0);
+                assert_eq!(state.round, round_before + 1, "Round should advance by 1");
+                assert_eq!(state.step, 0, "Step should reset to 0 at start of new round");
             } else {
                 // Should complete after round 23, step 4
-                assert!(state.is_complete);
+                assert!(state.is_complete, "Algorithm should be complete after final round");
             }
         }
     }
