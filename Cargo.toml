@@ -1,0 +1,11 @@
+[package]
+name = "sha3-visualizer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.14"
+bevy_panorbit_camera = "0.19"
+clap = { version = "4.0", features = ["derive"] }
+atty = "0.2"
+sha3 = "0.10"
