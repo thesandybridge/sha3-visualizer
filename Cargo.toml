@@ -3,6 +3,10 @@ name = "sha3-visualizer"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "sha3-visualizer"
+path = "src/main.rs"
+
 [dependencies]
 bevy = "0.14"
 bevy_panorbit_camera = "0.19"

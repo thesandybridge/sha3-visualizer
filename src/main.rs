@@ -86,20 +86,6 @@ fn setup(
     // Initialize Keccak state with provided input
     let mut keccak_state = KeccakState::new();
     keccak_state.set_input(&input_string.0);
-    
-    // Manually set some bits for visualization
-    for i in 0..5 {
-        for j in 0..5 {
-            for k in 0..10 {
-                if (i + j + k) % 3 == 0 {
-                    let lane_idx = i + 5 * j;
-                    if lane_idx < 25 {
-                        keccak_state.state[lane_idx] |= 1u64 << k;
-                    }
-                }
-            }
-        }
-    }
 
     // Create cube mesh and materials - smaller cubes to prevent collisions
     let cube_mesh = meshes.add(Cuboid::new(0.08, 0.08, 0.08));
@@ -321,7 +307,7 @@ fn setup_ui(mut commands: Commands) {
                 ..default()
             }).with_children(|parent| {
                 parent.spawn(TextBundle::from_section(
-                    "ENTER: Step | P: Play/Pause | R: Reset",
+                    "ENTER: Step | P: Play/Pause | R: Reset | F: Fast-Forward",
                     TextStyle {
                         font_size: 16.0,
                         color: Color::srgb(0.8, 0.8, 0.8),
@@ -402,20 +388,28 @@ fn update_ui(
 
     // Update round text
     if let Ok(mut text) = round_query.get_single_mut() {
-        text.sections[0].value = format!("Round: {}/24", visualization.state.round);
+        if visualization.state.is_complete {
+            text.sections[0].value = "Round: 24/24".to_string();
+        } else {
+            text.sections[0].value = format!("Round: {}/24", visualization.state.round + 1);
+        }
     }
 
     // Update step text with descriptions
     if let Ok(mut text) = step_query.get_single_mut() {
-        let (step_name, description) = match visualization.state.step {
-            0 => ("Theta", "Column mixing"),
-            1 => ("Rho", "Bit rotation"),
-            2 => ("Pi", "Lane rearrangement"),
-            3 => ("Chi", "Non-linear transformation"),
-            4 => ("Iota", "Round constant addition"),
-            _ => ("Unknown", ""),
-        };
-        text.sections[0].value = format!("Step: {} - {}", step_name, description);
+        if visualization.state.is_complete {
+            text.sections[0].value = "Step: Complete - Final hash ready".to_string();
+        } else {
+            let (step_name, description) = match visualization.state.step {
+                0 => ("Theta", "Column mixing"),
+                1 => ("Rho", "Bit rotation"),
+                2 => ("Pi", "Lane rearrangement"),
+                3 => ("Chi", "Non-linear transformation"),
+                4 => ("Iota", "Round constant addition"),
+                _ => ("Unknown", ""),
+            };
+            text.sections[0].value = format!("Step: {} - {}", step_name, description);
+        }
     }
 }
 
@@ -424,13 +418,11 @@ fn handle_input(
     mut visualization: ResMut<KeccakVisualization>,
 ) {
     if keyboard_input.just_pressed(KeyCode::Enter) {
-        let prev_round = visualization.state.round;
-        let prev_step = visualization.state.step;
         
         visualization.state.step();
         
-        // Check if we just completed the algorithm (finished round 23, step 4)
-        if prev_round == 23 && prev_step == 4 && visualization.state.round == 0 {
+        // Check if we just completed the algorithm
+        if visualization.state.is_complete && !visualization.is_complete {
             visualization.is_complete = true;
             visualization.final_hash = visualization.state.get_output_hex();
             
@@ -464,6 +456,38 @@ fn handle_input(
     if keyboard_input.just_pressed(KeyCode::KeyP) {
         visualization.is_playing = !visualization.is_playing;
         println!("Animation {}", if visualization.is_playing { "playing" } else { "paused" });
+    }
+    
+    if keyboard_input.just_pressed(KeyCode::KeyF) {
+        println!("Fast-forwarding to completion...");
+        
+        // Run all steps until complete
+        while !visualization.state.is_complete {
+            visualization.state.step();
+        }
+        
+        // Set completion state
+        if !visualization.is_complete {
+            visualization.is_complete = true;
+            visualization.final_hash = visualization.state.get_output_hex();
+            
+            // Verify against standard library
+            let mut hasher = Sha3_256::new();
+            hasher.update(visualization.input_text.as_bytes());
+            let expected = format!("{:x}", hasher.finalize());
+            
+            println!("SHA-3 COMPLETE!");
+            println!("Our hash:      {}", visualization.final_hash);
+            println!("Expected hash: {}", expected);
+            if visualization.final_hash == expected {
+                println!("✓ HASH VERIFICATION PASSED!");
+            } else {
+                println!("✗ Hash verification failed - implementation may have bugs");
+            }
+        }
+        
+        println!("Fast-forward complete! Final state: Round {}, Step {}", 
+                visualization.state.round, visualization.state.step);
     }
 }
 

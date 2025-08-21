@@ -7,6 +7,7 @@ pub struct KeccakState {
     pub state: [u64; 25], // 5x5 array of 64-bit lanes
     pub round: usize,
     pub step: usize, // Current step within the round (0-4 for θ,ρ,π,χ,ι)
+    pub is_complete: bool, // True when algorithm is finished
     #[allow(dead_code)]
     input_data: Vec<u8>,
     #[allow(dead_code)]
@@ -38,6 +39,7 @@ impl KeccakState {
             state: [0u64; 25],
             round: 0,
             step: 0,
+            is_complete: false,
             input_data: Vec::new(),
             absorbed: 0,
             rate: 1088 / 8, // SHA3-256 rate
@@ -60,6 +62,7 @@ impl KeccakState {
             state: [0u64; 25],
             round: 0,
             step: 0,
+            is_complete: false,
             input_data: Vec::new(),
             absorbed: 0,
             rate: rate / 8,
@@ -75,40 +78,12 @@ impl KeccakState {
         self.absorbed = 0;
         self.round = 0;
         self.step = 0;
-        self.state = [0u64; 25];
+        self.is_complete = false;
+        self.state = [0u64; 25]; // Start with truly empty state
         self.step_history.clear();
-        self.prepare_input_without_permutation();
+        // Don't absorb input yet - let user step through the process
     }
 
-    // Prepare input for visualization without running the permutation
-    fn prepare_input_without_permutation(&mut self) {
-        // Pad the message
-        let mut padded = self.input_data.clone();
-        
-        // SHA-3 padding: append 0x06, then pad with zeros, then set the last bit
-        padded.push(0x06);
-        while padded.len() % self.rate != (self.rate - 1) {
-            padded.push(0x00);
-        }
-        padded.push(0x80);
-
-        // XOR the first (and typically only) block into state
-        // For visualization, we only process the first block to start at round 0
-        if let Some(chunk) = padded.chunks(self.rate).next() {
-            for (i, &byte) in chunk.iter().enumerate() {
-                let lane_index = i / 8;
-                let byte_index = i % 8;
-                if lane_index < 25 {
-                    let shift = byte_index * 8;
-                    self.state[lane_index] ^= (byte as u64) << shift;
-                }
-            }
-        }
-        
-        // Reset to beginning of permutation for visualization
-        self.round = 0;
-        self.step = 0;
-    }
 
     pub fn get_bit(&self, x: usize, y: usize, z: usize) -> bool {
         if x >= 5 || y >= 64 || z >= 5 {
@@ -167,27 +142,60 @@ impl KeccakState {
     #[allow(dead_code)]
     fn apply_keccak_f(&mut self) {
         for round in 0..24 {
-            self.round = round;
+            // Theta
+            let mut c = [0u64; 5];
+            for x in 0..5 {
+                c[x] = self.state[x] ^ self.state[x + 5] ^ self.state[x + 10] ^ self.state[x + 15] ^ self.state[x + 20];
+            }
             
-            // θ (Theta) step
-            self.step = 0;
-            self.apply_theta();
+            let mut d = [0u64; 5];
+            for x in 0..5 {
+                d[x] = c[(x + 4) % 5] ^ c[(x + 1) % 5].rotate_left(1);
+            }
             
-            // ρ (Rho) step  
-            self.step = 1;
-            self.apply_rho();
+            for x in 0..5 {
+                for y in 0..5 {
+                    self.state[x + 5 * y] ^= d[x];
+                }
+            }
             
-            // π (Pi) step
-            self.step = 2;
-            self.apply_pi();
+            // Rho step: just rotate each lane in place
+            for i in 0..25 {
+                let x = i % 5;
+                let z = i / 5;
+                self.state[i] = self.state[i].rotate_left(RHO_OFFSETS[x][z] as u32);
+            }
             
-            // χ (Chi) step
-            self.step = 3;
-            self.apply_chi();
+            // Pi step: permute lanes according to XKCP pattern
+            let mut new_state = self.state;
+            let mut x = 1;
+            let mut y = 0;
+            let mut current = self.state[x + 5 * y];
             
-            // ι (Iota) step
-            self.step = 4;
-            self.apply_iota(round);
+            for _t in 0..24 {
+                let new_y = (2 * x + 3 * y) % 5;
+                x = y;
+                y = new_y;
+                
+                let temp = self.state[x + 5 * y];
+                new_state[x + 5 * y] = current;
+                current = temp;
+            }
+            self.state = new_state;
+            
+            // Chi
+            for y in 0..5 {
+                let mut row = [0u64; 5];
+                for x in 0..5 {
+                    row[x] = self.state[x + 5 * y];
+                }
+                for x in 0..5 {
+                    self.state[x + 5 * y] = row[x] ^ (!row[(x + 1) % 5] & row[(x + 2) % 5]);
+                }
+            }
+            
+            // Iota
+            self.state[0] ^= ROUND_CONSTANTS[round];
         }
     }
 
@@ -198,9 +206,7 @@ impl KeccakState {
         // Calculate column parities
         let mut c = [0u64; 5];
         for x in 0..5 {
-            for z in 0..5 {
-                c[x] ^= self.get_lane(x, z);
-            }
+            c[x] = self.state[x] ^ self.state[x + 5] ^ self.state[x + 10] ^ self.state[x + 15] ^ self.state[x + 20];
         }
         
         // Calculate D values
@@ -211,9 +217,8 @@ impl KeccakState {
         
         // Apply theta
         for x in 0..5 {
-            for z in 0..5 {
-                let old_value = self.get_lane(x, z);
-                self.set_lane(x, z, old_value ^ d[x]);
+            for y in 0..5 {
+                self.state[x + 5 * y] ^= d[x];
             }
         }
 
@@ -224,14 +229,12 @@ impl KeccakState {
     fn apply_rho(&mut self) {
         let state_before = self.state;
         
-        let mut new_state = self.state;
-        for x in 0..5 {
-            for z in 0..5 {
-                let offset = RHO_OFFSETS[x][z];
-                new_state[x + 5 * z] = self.state[x + 5 * z].rotate_left(offset as u32);
-            }
+        // Rho step: just rotate each lane in place
+        for i in 0..25 {
+            let x = i % 5;
+            let z = i / 5;
+            self.state[i] = self.state[i].rotate_left(RHO_OFFSETS[x][z] as u32);
         }
-        self.state = new_state;
 
         self.record_step("Rho (ρ)", state_before, "Bit rotation within lanes");
     }
@@ -240,13 +243,20 @@ impl KeccakState {
     fn apply_pi(&mut self) {
         let state_before = self.state;
         
-        let mut new_state = [0u64; 25];
-        for x in 0..5 {
-            for z in 0..5 {
-                let new_x = (x + 3 * z) % 5;
-                let new_z = x;
-                new_state[new_x + 5 * new_z] = self.state[x + 5 * z];
-            }
+        // Pi step: permute lanes according to XKCP pattern
+        let mut new_state = self.state;
+        let mut x = 1;
+        let mut y = 0;
+        let mut current = self.state[x + 5 * y];
+        
+        for _t in 0..24 {
+            let new_y = (2 * x + 3 * y) % 5;
+            x = y;
+            y = new_y;
+            
+            let temp = self.state[x + 5 * y];
+            new_state[x + 5 * y] = current;
+            current = temp;
         }
         self.state = new_state;
 
@@ -257,15 +267,16 @@ impl KeccakState {
     fn apply_chi(&mut self) {
         let state_before = self.state;
         
-        let mut new_state = [0u64; 25];
-        for x in 0..5 {
-            for z in 0..5 {
-                let lane = self.get_lane(x, z) ^ 
-                    ((!self.get_lane((x + 1) % 5, z)) & self.get_lane((x + 2) % 5, z));
-                new_state[x + 5 * z] = lane;
+        // Chi step: process each row
+        for y in 0..5 {
+            let mut row = [0u64; 5];
+            for x in 0..5 {
+                row[x] = self.state[x + 5 * y];
+            }
+            for x in 0..5 {
+                self.state[x + 5 * y] = row[x] ^ (!row[(x + 1) % 5] & row[(x + 2) % 5]);
             }
         }
-        self.state = new_state;
 
         self.record_step("Chi (χ)", state_before, "Non-linear transformation");
     }
@@ -291,7 +302,48 @@ impl KeccakState {
         });
     }
 
+    fn absorb_input_step(&mut self) {
+        let state_before = self.state;
+        
+        // Pad the message
+        let mut padded = self.input_data.clone();
+        
+        // SHA-3 padding: append 0x06, then pad with zeros, then set the last bit
+        padded.push(0x06);
+        while padded.len() % self.rate != (self.rate - 1) {
+            padded.push(0x00);
+        }
+        padded.push(0x80);
+
+        // XOR the first (and typically only) block into state
+        if let Some(chunk) = padded.chunks(self.rate).next() {
+            for (i, &byte) in chunk.iter().enumerate() {
+                let lane_index = i / 8;
+                let byte_index = i % 8;
+                if lane_index < 25 {
+                    let shift = byte_index * 8;
+                    self.state[lane_index] ^= (byte as u64) << shift;
+                }
+            }
+        }
+        
+        self.absorbed = 1;
+        self.record_step("Absorb Input", state_before, "XOR padded input into state");
+        println!("Absorbed input data into state");
+    }
+
     pub fn step(&mut self) {
+        // Don't step if algorithm is complete
+        if self.is_complete {
+            return;
+        }
+        
+        // Check if we need to absorb input first
+        if self.round == 0 && self.step == 0 && self.absorbed == 0 {
+            self.absorb_input_step();
+            return;
+        }
+
         // Perform one step of the Keccak-f permutation
         match self.step {
             0 => {
@@ -328,10 +380,10 @@ impl KeccakState {
                     self.step = 0;
                     println!("Applied Iota step, completed round {}, starting round {}", self.round - 1, self.round);
                 } else {
-                    // Reset to beginning for continuous demo
-                    self.round = 0;
-                    self.step = 0;
-                    println!("Keccak-f permutation complete! Restarting from round 0");
+                    // Algorithm complete - set completion flag
+                    self.is_complete = true;
+                    // Keep step at 4 (Iota) but mark as complete
+                    println!("Keccak-f permutation complete! Final state ready.");
                 }
             }
             _ => {
@@ -345,6 +397,16 @@ impl KeccakState {
 
     #[allow(dead_code)]
     pub fn get_current_step_name(&self) -> String {
+        // Check if algorithm is complete
+        if self.is_complete {
+            return "Complete".to_string();
+        }
+        
+        // Check if we're in the absorption phase
+        if self.round == 0 && self.step == 0 && self.absorbed == 0 {
+            return "Absorb Input".to_string();
+        }
+        
         match self.step {
             0 => "Theta (θ)".to_string(),
             1 => "Rho (ρ)".to_string(),
@@ -365,7 +427,11 @@ impl KeccakState {
         let mut output = String::new();
         for i in 0..(self.output_length / 8) {
             if i < 25 {
-                output.push_str(&format!("{:016x}", self.state[i].swap_bytes()));
+                // SHA-3 uses little-endian byte order for output
+                let bytes = self.state[i].to_le_bytes();
+                for byte in bytes {
+                    output.push_str(&format!("{:02x}", byte));
+                }
             }
         }
         output[0..self.output_length * 2].to_string()
