@@ -77,7 +77,37 @@ impl KeccakState {
         self.step = 0;
         self.state = [0u64; 25];
         self.step_history.clear();
-        self.absorb_phase();
+        self.prepare_input_without_permutation();
+    }
+
+    // Prepare input for visualization without running the permutation
+    fn prepare_input_without_permutation(&mut self) {
+        // Pad the message
+        let mut padded = self.input_data.clone();
+        
+        // SHA-3 padding: append 0x06, then pad with zeros, then set the last bit
+        padded.push(0x06);
+        while padded.len() % self.rate != (self.rate - 1) {
+            padded.push(0x00);
+        }
+        padded.push(0x80);
+
+        // XOR the first (and typically only) block into state
+        // For visualization, we only process the first block to start at round 0
+        if let Some(chunk) = padded.chunks(self.rate).next() {
+            for (i, &byte) in chunk.iter().enumerate() {
+                let lane_index = i / 8;
+                let byte_index = i % 8;
+                if lane_index < 25 {
+                    let shift = byte_index * 8;
+                    self.state[lane_index] ^= (byte as u64) << shift;
+                }
+            }
+        }
+        
+        // Reset to beginning of permutation for visualization
+        self.round = 0;
+        self.step = 0;
     }
 
     pub fn get_bit(&self, x: usize, y: usize, z: usize) -> bool {
@@ -339,6 +369,18 @@ impl KeccakState {
             }
         }
         output[0..self.output_length * 2].to_string()
+    }
+
+    pub fn get_capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn get_rate(&self) -> usize {
+        self.rate * 8 // Convert from bytes to bits
+    }
+
+    pub fn get_output_length(&self) -> usize {
+        self.output_length * 8 // Convert from bytes to bits  
     }
 }
 

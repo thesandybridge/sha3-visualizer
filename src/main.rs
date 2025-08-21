@@ -2,7 +2,6 @@ use bevy::prelude::*;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use clap::Parser;
 use sha3::{Digest, Sha3_256};
-use std::collections::HashMap;
 use std::io::{self, Read};
 
 mod sha3_impl;
@@ -46,7 +45,6 @@ struct InputString(String);
 #[derive(Resource)]
 struct KeccakVisualization {
     state: KeccakState,
-    cube_entities: HashMap<(usize, usize, usize), Entity>,
     is_playing: bool,
     animation_timer: Timer,
     input_text: String,
@@ -76,6 +74,9 @@ struct OutputText;
 #[derive(Component)]
 struct StatusText;
 
+#[derive(Component)]
+struct CapacityText;
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -103,42 +104,7 @@ fn setup(
     // Create cube mesh and materials - smaller cubes to prevent collisions
     let cube_mesh = meshes.add(Cuboid::new(0.08, 0.08, 0.08));
     
-    // Create materials for different transformation steps
-    let theta_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.3, 0.3), // Red for Theta (column mixing)
-        emissive: bevy::color::LinearRgba::new(0.3, 0.1, 0.1, 1.0),
-        metallic: 0.1,
-        perceptual_roughness: 0.3,
-        ..default()
-    });
-    let rho_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.3, 1.0, 0.3), // Green for Rho (rotation)
-        emissive: bevy::color::LinearRgba::new(0.1, 0.3, 0.1, 1.0),
-        metallic: 0.1,
-        perceptual_roughness: 0.3,
-        ..default()
-    });
-    let pi_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.3, 0.3, 1.0), // Blue for Pi (permutation)
-        emissive: bevy::color::LinearRgba::new(0.1, 0.1, 0.3, 1.0),
-        metallic: 0.1,
-        perceptual_roughness: 0.3,
-        ..default()
-    });
-    let chi_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.3, 1.0), // Magenta for Chi (non-linear)
-        emissive: bevy::color::LinearRgba::new(0.3, 0.1, 0.3, 1.0),
-        metallic: 0.1,
-        perceptual_roughness: 0.3,
-        ..default()
-    });
-    let iota_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 1.0, 0.3), // Yellow for Iota (round constant)
-        emissive: bevy::color::LinearRgba::new(0.3, 0.3, 0.1, 1.0),
-        metallic: 0.1,
-        perceptual_roughness: 0.3,
-        ..default()
-    });
+    // Materials are created dynamically in update_cubes function
     
     // Default active material (cyan)
     let active_material = materials.add(StandardMaterial {
@@ -154,8 +120,6 @@ fn setup(
         perceptual_roughness: 0.8,
         ..default()
     });
-
-    let mut cube_entities = HashMap::new();
 
     // Create cubes for the 5x5x64 matrix
     for lane_x in 0..5 {
@@ -173,7 +137,7 @@ fn setup(
                     inactive_material.clone()
                 };
 
-                let entity = commands.spawn((
+                commands.spawn((
                     PbrBundle {
                         mesh: cube_mesh.clone(),
                         material,
@@ -181,9 +145,7 @@ fn setup(
                         ..default()
                     },
                     BitCube { lane_x, bit_y, lane_z },
-                )).id();
-
-                cube_entities.insert((lane_x, bit_y, lane_z), entity);
+                ));
             }
         }
     }
@@ -191,7 +153,6 @@ fn setup(
     // Add visualization resource
     commands.insert_resource(KeccakVisualization {
         state: keccak_state,
-        cube_entities,
         is_playing: false,
         animation_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
         input_text: input_string.0.clone(),
@@ -292,6 +253,17 @@ fn setup_ui(mut commands: Commands) {
                     ),
                     StatusText,
                 ));
+                parent.spawn((
+                    TextBundle::from_section(
+                        "Capacity: 512 bits | Rate: 1088 bits | SHA3-256",
+                        TextStyle {
+                            font_size: 14.0,
+                            color: Color::srgb(0.7, 0.7, 0.7), // Light gray for technical info
+                            ..default()
+                        },
+                    ),
+                    CapacityText,
+                ));
             });
         });
 
@@ -371,11 +343,12 @@ fn setup_ui(mut commands: Commands) {
 
 fn update_ui(
     visualization: Res<KeccakVisualization>,
-    mut round_query: Query<&mut Text, (With<RoundText>, Without<StepText>, Without<InputText>, Without<OutputText>, Without<StatusText>)>,
-    mut step_query: Query<&mut Text, (With<StepText>, Without<RoundText>, Without<InputText>, Without<OutputText>, Without<StatusText>)>,
-    mut input_query: Query<&mut Text, (With<InputText>, Without<StepText>, Without<RoundText>, Without<OutputText>, Without<StatusText>)>,
-    mut output_query: Query<&mut Text, (With<OutputText>, Without<StepText>, Without<RoundText>, Without<InputText>, Without<StatusText>)>,
-    mut status_query: Query<&mut Text, (With<StatusText>, Without<StepText>, Without<RoundText>, Without<InputText>, Without<OutputText>)>,
+    mut round_query: Query<&mut Text, (With<RoundText>, Without<StepText>, Without<InputText>, Without<OutputText>, Without<StatusText>, Without<CapacityText>)>,
+    mut step_query: Query<&mut Text, (With<StepText>, Without<RoundText>, Without<InputText>, Without<OutputText>, Without<StatusText>, Without<CapacityText>)>,
+    mut input_query: Query<&mut Text, (With<InputText>, Without<StepText>, Without<RoundText>, Without<OutputText>, Without<StatusText>, Without<CapacityText>)>,
+    mut output_query: Query<&mut Text, (With<OutputText>, Without<StepText>, Without<RoundText>, Without<InputText>, Without<StatusText>, Without<CapacityText>)>,
+    mut status_query: Query<&mut Text, (With<StatusText>, Without<StepText>, Without<RoundText>, Without<InputText>, Without<OutputText>, Without<CapacityText>)>,
+    mut capacity_query: Query<&mut Text, (With<CapacityText>, Without<StepText>, Without<RoundText>, Without<InputText>, Without<OutputText>, Without<StatusText>)>,
 ) {
     if !visualization.is_changed() {
         return;
@@ -415,6 +388,16 @@ fn update_ui(
         } else {
             text.sections[0].value = "Computing...".to_string();
         }
+    }
+
+    // Update capacity info (only needs to be set once, but we'll update it for completeness)
+    if let Ok(mut text) = capacity_query.get_single_mut() {
+        text.sections[0].value = format!(
+            "Capacity: {} bits | Rate: {} bits | Output: {} bits",
+            visualization.state.get_capacity(),
+            visualization.state.get_rate(),
+            visualization.state.get_output_length()
+        );
     }
 
     // Update round text
@@ -530,7 +513,7 @@ fn update_cubes(
     }
 
     // Create step-specific materials
-    let (active_material, step_name) = match visualization.state.step {
+    let (active_material, _step_name) = match visualization.state.step {
         0 => (materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 0.3, 0.3), // Red for Theta
             emissive: bevy::color::LinearRgba::new(0.3, 0.1, 0.1, 1.0),
