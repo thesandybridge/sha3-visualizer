@@ -10,21 +10,26 @@ keywords = ["cryptography", "sha3", "keccak", "visualization", "education"]
 categories = ["cryptography", "visualization", "educational-software"]
 readme = "README.md"
 
-# Enable library mode for testing
 [lib]
 name = "sha3_visualizer"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "sha3-visualizer"
 path = "src/main.rs"
 
 [dependencies]
+sha3 = "0.10"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bevy = "0.14"
 bevy_panorbit_camera = "0.19"
 clap = { version = "4.0", features = ["derive"] }
 atty = "0.2"
-sha3 = "0.10"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
 
 [dev-dependencies]
 # Additional SHA-3 variants for comprehensive testing

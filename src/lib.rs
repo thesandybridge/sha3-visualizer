@@ -44,6 +44,9 @@
 
 pub mod sha3_impl;
 
+#[cfg(target_arch = "wasm32")]
+pub mod wasm_bindings;
+
 // Re-export commonly used types for convenience
 pub use sha3_impl::{KeccakState, Sha3Variant};
 

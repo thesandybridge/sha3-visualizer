@@ -3679,6 +3679,7 @@ dependencies = [
  "clap",
  "criterion",
  "sha3",
+ "wasm-bindgen",
 ]
 
 [[package]]
